@@ -48,8 +48,34 @@ namespace LegacyRenewalApp
 
             decimal baseAmount = (plan.MonthlyPricePerSeat * seatCount * 12m) + plan.SetupFee;
             decimal discountAmount = 0m;
+            decimal discountVariable = 0m;
             string notes = string.Empty;
 
+            switch (customer.Segment)
+            {
+                case "Silver":
+                    discountVariable = 0.05m;
+                    notes += "silver discount; ";
+                    break;
+                case "Gold":
+                    discountVariable = 0.10m;
+                    notes += "gold discount; ";
+                    break;
+                case "Platinum":
+                    discountVariable = 0.15m;
+                    notes += "platinum discount; ";
+                    break;
+                case "Education":
+                    if (plan.IsEducationEligible)
+                    {
+                        discountVariable = 0.20m;
+                        notes += "education discount; ";
+                    }
+                    break;
+            }
+            
+            discountAmount += baseAmount * discountVariable;
+            /*
             if (customer.Segment == "Silver")
             {
                 discountAmount += baseAmount * 0.05m;
@@ -69,7 +95,7 @@ namespace LegacyRenewalApp
             {
                 discountAmount += baseAmount * 0.20m;
                 notes += "education discount; ";
-            }
+            }*/
 
             if (customer.YearsWithCompany >= 5)
             {
@@ -130,9 +156,31 @@ namespace LegacyRenewalApp
 
                 notes += "premium support included; ";
             }
-
+            
             decimal paymentFee = 0m;
-            if (normalizedPaymentMethod == "CARD")
+            decimal paymentVariable = 0m;
+            switch (normalizedPaymentMethod)
+            {
+                case "CARD":
+                    paymentVariable = 0.02m;
+                    notes += "card payment fee; ";
+                    break;
+                case "BANK_TRANSFER":
+                    paymentVariable = 0.01m;
+                    notes += "bank transfer fee; ";
+                    break;
+                case "PAYPAL":
+                    paymentVariable = 0.035m;
+                    notes += "paypal fee; ";
+                    break;
+                case "INVOICE":
+                    notes += "invoice payment; ";
+                    break;
+                default:
+                    throw new ArgumentException("Unsupported payment method");
+            }
+            paymentFee = (subtotalAfterDiscount + supportFee) * paymentVariable;
+            /*if (normalizedPaymentMethod == "CARD")
             {
                 paymentFee = (subtotalAfterDiscount + supportFee) * 0.02m;
                 notes += "card payment fee; ";
@@ -155,8 +203,8 @@ namespace LegacyRenewalApp
             else
             {
                 throw new ArgumentException("Unsupported payment method");
-            }
-
+            }*/
+            
             decimal taxRate = 0.20m;
             if (customer.Country == "Poland")
             {
@@ -192,12 +240,12 @@ namespace LegacyRenewalApp
                 PlanCode = normalizedPlanCode,
                 PaymentMethod = normalizedPaymentMethod,
                 SeatCount = seatCount,
-                BaseAmount = Math.Round(baseAmount, 2, MidpointRounding.AwayFromZero),
-                DiscountAmount = Math.Round(discountAmount, 2, MidpointRounding.AwayFromZero),
-                SupportFee = Math.Round(supportFee, 2, MidpointRounding.AwayFromZero),
-                PaymentFee = Math.Round(paymentFee, 2, MidpointRounding.AwayFromZero),
-                TaxAmount = Math.Round(taxAmount, 2, MidpointRounding.AwayFromZero),
-                FinalAmount = Math.Round(finalAmount, 2, MidpointRounding.AwayFromZero),
+                BaseAmount = StandardRounder.round(baseAmount),
+                DiscountAmount = StandardRounder.round(discountAmount),
+                SupportFee = StandardRounder.round(supportFee),
+                PaymentFee = StandardRounder.round(paymentFee),
+                TaxAmount = StandardRounder.round(taxAmount),
+                FinalAmount = StandardRounder.round(finalAmount),
                 Notes = notes.Trim(),
                 GeneratedAt = DateTime.UtcNow
             };
