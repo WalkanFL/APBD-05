@@ -15,7 +15,7 @@ namespace LegacyRenewalApp
             { 5, new Customer { Id = 5, FullName = "Nordic Ventures", Email = "finance@nordic.example.com", Segment = "Silver", Country = "Norway", YearsWithCompany = 2, LoyaltyPoints = 30, IsActive = true } }
         };
 
-        public Customer GetById(int customerId)
+        public static Customer GetById(int customerId)
         {
             int randomWaitTime = new Random().Next(500);
             Thread.Sleep(randomWaitTime);

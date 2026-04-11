@@ -1,9 +1,19 @@
 using System;
+using System.Collections.Generic;
 
 namespace LegacyRenewalApp
 {
     public class SubscriptionRenewalService
     {
+        private decimal minimalFinalAmount = 500m;
+        
+        private static Dictionary<string, decimal> supportFeeDict= new Dictionary<string, decimal>
+        {
+            { "START", 250m },
+            { "PRO", 400m },
+            { "ENTERPRISE", 700m },
+        };
+        
         public RenewalInvoice CreateRenewalInvoice(
             int customerId,
             string planCode,
@@ -11,7 +21,85 @@ namespace LegacyRenewalApp
             string paymentMethod,
             bool includePremiumSupport,
             bool useLoyaltyPoints) //tego nie możemy dotykać
-        { //sprawdzenie danych
+        {
+            validateData(customerId, seatCount, planCode, paymentMethod);
+            
+            string normalizedPlanCode = Normalizer.normalize(planCode); 
+            string normalizedPaymentMethod = Normalizer.normalize(paymentMethod);
+
+            //wcześniej te dwie metody nie były statyczne mimo, że operowały na statycznych danych
+            var customer = CustomerRepository.GetById(customerId);
+            var plan = SubscriptionPlanRepository.GetByCode(normalizedPlanCode);
+
+            decimal baseAmount = plan.calculateBasePrice(seatCount);
+            
+            //discount calc
+            IDiscount discountProcessor = new DiscountProcessor(customer,plan,baseAmount,seatCount,useLoyaltyPoints);
+            decimal subtotalAfterDiscount = discountProcessor.processDiscount();
+
+            string notes = discountProcessor.getNotes();
+            
+            decimal supportFee = 0m;
+            if (includePremiumSupport)
+            {
+                supportFee = supportFeeDict.GetValueOrDefault(normalizedPlanCode);
+                notes += "premium support included; ";
+            }
+
+            ITax taxProcessor = new TaxProcessor((subtotalAfterDiscount + supportFee), normalizedPaymentMethod, customer);
+
+            taxProcessor.processTax();
+            notes += taxProcessor.getNotes();
+            
+            decimal finalAmount = 
+                //taxBase 
+                subtotalAfterDiscount + supportFee + taxProcessor.getPaymentFee()
+                + 
+                //taxAmount
+                taxProcessor.getTaxAmount()
+                ;
+
+            if (finalAmount < minimalFinalAmount)
+            {
+                finalAmount = minimalFinalAmount; //usunięcie magic numbera
+                notes += "minimum invoice amount applied; ";
+            }
+
+            var invoice = new RenewalInvoice
+            {
+                InvoiceNumber = $"INV-{DateTime.UtcNow:yyyyMMdd}-{customerId}-{normalizedPlanCode}",
+                CustomerName = customer.FullName,
+                PlanCode = normalizedPlanCode,
+                PaymentMethod = normalizedPaymentMethod,
+                SeatCount = seatCount,
+                BaseAmount = StandardRounder.round(baseAmount),
+                DiscountAmount = StandardRounder.round(discountProcessor.getDiscountAmount()),
+                SupportFee = StandardRounder.round(supportFee),
+                PaymentFee = StandardRounder.round(taxProcessor.getPaymentFee()),
+                TaxAmount = StandardRounder.round(taxProcessor.getTaxAmount()),
+                FinalAmount = StandardRounder.round(finalAmount),
+                Notes = notes.Trim(),
+                GeneratedAt = DateTime.UtcNow
+            };
+
+            LegacyBillingGateway.SaveInvoice(invoice);
+
+            if (!string.IsNullOrWhiteSpace(customer.Email))
+            {
+                string subject = "Subscription renewal invoice";
+                string body =
+                    $"Hello {customer.FullName}, your renewal for plan {normalizedPlanCode} " +
+                    $"has been prepared. Final amount: {invoice.FinalAmount:F2}.";
+
+                LegacyBillingGateway.SendEmail(customer.Email, subject, body);
+            }
+
+            return invoice;
+        }
+
+        public void validateData(int customerId, int seatCount, string planCode, string paymentMethod)
+        {
+            //sprawdzenie danych oddzielone do osobnej funkcji
             if (customerId <= 0)
             {
                 throw new ArgumentException("Customer id must be positive");
@@ -32,154 +120,16 @@ namespace LegacyRenewalApp
                 throw new ArgumentException("Payment method is required");
             }
             
-            string normalizedPlanCode = planCode.Trim().ToUpperInvariant(); //niepotrzebnie zadeklarowane
-            string normalizedPaymentMethod = paymentMethod.Trim().ToUpperInvariant();
-
-            var customerRepository = new CustomerRepository();
-            var planRepository = new SubscriptionPlanRepository();
-
-            var customer = customerRepository.GetById(customerId);
-            var plan = planRepository.GetByCode(normalizedPlanCode);
-
-            if (!customer.IsActive) //sprawdzenie
+            if (!CustomerRepository.GetById(customerId).IsActive)
             {
                 throw new InvalidOperationException("Inactive customers cannot renew subscriptions");
             }
-
-            decimal baseAmount = (plan.MonthlyPricePerSeat * seatCount * 12m) + plan.SetupFee;
             
-            
-            //discount calc
-            DiscountProcessor discountProcessor = new DiscountProcessor(customer,plan,baseAmount,seatCount,useLoyaltyPoints);
-            decimal subtotalAfterDiscount = discountProcessor.processDiscount();
-
-            string notes = discountProcessor.notes;
-            
-            decimal supportFee = 0m;
-            if (includePremiumSupport)
-            {
-                if (normalizedPlanCode == "START")
-                {
-                    supportFee = 250m;
-                }
-                else if (normalizedPlanCode == "PRO")
-                {
-                    supportFee = 400m;
-                }
-                else if (normalizedPlanCode == "ENTERPRISE")
-                {
-                    supportFee = 700m;
-                }
-
-                notes += "premium support included; ";
-            }
-            
-            decimal paymentFee = 0m;
-            decimal paymentVariable = 0m;
-            switch (normalizedPaymentMethod)
-            {
-                case "CARD":
-                    paymentVariable = 0.02m;
-                    notes += "card payment fee; ";
-                    break;
-                case "BANK_TRANSFER":
-                    paymentVariable = 0.01m;
-                    notes += "bank transfer fee; ";
-                    break;
-                case "PAYPAL":
-                    paymentVariable = 0.035m;
-                    notes += "paypal fee; ";
-                    break;
-                case "INVOICE":
-                    notes += "invoice payment; ";
-                    break;
-                default: //sprawdzenie
-                    throw new ArgumentException("Unsupported payment method");
-            }
-            paymentFee = (subtotalAfterDiscount + supportFee) * paymentVariable;
-            /*if (normalizedPaymentMethod == "CARD")
-            {
-                paymentFee = (subtotalAfterDiscount + supportFee) * 0.02m;
-                notes += "card payment fee; ";
-            }
-            else if (normalizedPaymentMethod == "BANK_TRANSFER")
-            {
-                paymentFee = (subtotalAfterDiscount + supportFee) * 0.01m;
-                notes += "bank transfer fee; ";
-            }
-            else if (normalizedPaymentMethod == "PAYPAL")
-            {
-                paymentFee = (subtotalAfterDiscount + supportFee) * 0.035m;
-                notes += "paypal fee; ";
-            }
-            else if (normalizedPaymentMethod == "INVOICE")
-            {
-                paymentFee = 0m;
-                notes += "invoice payment; ";
-            }
-            else
+            if (!ITax.payTypeFeeDict.ContainsKey(Normalizer.normalize(paymentMethod)))
             {
                 throw new ArgumentException("Unsupported payment method");
-            }*/
-            
-            decimal taxRate = 0.20m;
-            if (customer.Country == "Poland")
-            {
-                taxRate = 0.23m;
             }
-            else if (customer.Country == "Germany")
-            {
-                taxRate = 0.19m;
-            }
-            else if (customer.Country == "Czech Republic")
-            {
-                taxRate = 0.21m;
-            }
-            else if (customer.Country == "Norway")
-            {
-                taxRate = 0.25m;
-            }
-
-            decimal taxBase = subtotalAfterDiscount + supportFee + paymentFee;
-            decimal taxAmount = taxBase * taxRate;
-            decimal finalAmount = taxBase + taxAmount;
-
-            if (finalAmount < 500m)
-            {
-                finalAmount = 500m;
-                notes += "minimum invoice amount applied; ";
-            }
-
-            var invoice = new RenewalInvoice
-            {
-                InvoiceNumber = $"INV-{DateTime.UtcNow:yyyyMMdd}-{customerId}-{normalizedPlanCode}",
-                CustomerName = customer.FullName,
-                PlanCode = normalizedPlanCode,
-                PaymentMethod = normalizedPaymentMethod,
-                SeatCount = seatCount,
-                BaseAmount = StandardRounder.round(baseAmount),
-                DiscountAmount = StandardRounder.round(discountProcessor.discountAmount),
-                SupportFee = StandardRounder.round(supportFee),
-                PaymentFee = StandardRounder.round(paymentFee),
-                TaxAmount = StandardRounder.round(taxAmount),
-                FinalAmount = StandardRounder.round(finalAmount),
-                Notes = notes.Trim(),
-                GeneratedAt = DateTime.UtcNow
-            };
-
-            LegacyBillingGateway.SaveInvoice(invoice);
-
-            if (!string.IsNullOrWhiteSpace(customer.Email))
-            {
-                string subject = "Subscription renewal invoice";
-                string body =
-                    $"Hello {customer.FullName}, your renewal for plan {normalizedPlanCode} " +
-                    $"has been prepared. Final amount: {invoice.FinalAmount:F2}.";
-
-                LegacyBillingGateway.SendEmail(customer.Email, subject, body);
-            }
-
-            return invoice;
         }
+
     }
 }

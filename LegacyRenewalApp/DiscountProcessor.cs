@@ -2,7 +2,7 @@
 
 namespace LegacyRenewalApp;
 
-public class DiscountProcessor
+public class DiscountProcessor : IDiscount
 {
     private static decimal minimumSubtotal = 300m;
     
@@ -14,7 +14,7 @@ public class DiscountProcessor
     private bool usePoints;
     private int seatCount;
 
-    public string notes { get; private set; }
+    private string notes { get; set; }
 
     public DiscountProcessor(Customer customer, SubscriptionPlan plan, decimal baseAmount, int seatCount, bool usePoints)
     {
@@ -26,7 +26,7 @@ public class DiscountProcessor
         this.usePoints = usePoints;
 
         discountAmount = 0m;
-        notes = String.Empty;
+        notes = string.Empty;
 
     }
 
@@ -48,6 +48,17 @@ public class DiscountProcessor
         
         return subtotalAfterDiscount;
     }
+
+    public string getNotes()
+    {
+        return notes;
+    }
+
+    public decimal getDiscountAmount()
+    {
+        return discountAmount;
+    }
+
     //discount for customer tier calc
     private void processTier()
     {
