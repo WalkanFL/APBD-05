@@ -10,8 +10,8 @@ namespace LegacyRenewalApp
             int seatCount,
             string paymentMethod,
             bool includePremiumSupport,
-            bool useLoyaltyPoints)
-        {
+            bool useLoyaltyPoints) //tego nie możemy dotykać
+        { //sprawdzenie danych
             if (customerId <= 0)
             {
                 throw new ArgumentException("Customer id must be positive");
@@ -31,8 +31,8 @@ namespace LegacyRenewalApp
             {
                 throw new ArgumentException("Payment method is required");
             }
-
-            string normalizedPlanCode = planCode.Trim().ToUpperInvariant();
+            
+            string normalizedPlanCode = planCode.Trim().ToUpperInvariant(); //niepotrzebnie zadeklarowane
             string normalizedPaymentMethod = paymentMethod.Trim().ToUpperInvariant();
 
             var customerRepository = new CustomerRepository();
@@ -41,103 +41,20 @@ namespace LegacyRenewalApp
             var customer = customerRepository.GetById(customerId);
             var plan = planRepository.GetByCode(normalizedPlanCode);
 
-            if (!customer.IsActive)
+            if (!customer.IsActive) //sprawdzenie
             {
                 throw new InvalidOperationException("Inactive customers cannot renew subscriptions");
             }
 
             decimal baseAmount = (plan.MonthlyPricePerSeat * seatCount * 12m) + plan.SetupFee;
-            decimal discountAmount = 0m;
-            decimal discountVariable = 0m;
-            string notes = string.Empty;
-
-            switch (customer.Segment)
-            {
-                case "Silver":
-                    discountVariable = 0.05m;
-                    notes += "silver discount; ";
-                    break;
-                case "Gold":
-                    discountVariable = 0.10m;
-                    notes += "gold discount; ";
-                    break;
-                case "Platinum":
-                    discountVariable = 0.15m;
-                    notes += "platinum discount; ";
-                    break;
-                case "Education":
-                    if (plan.IsEducationEligible)
-                    {
-                        discountVariable = 0.20m;
-                        notes += "education discount; ";
-                    }
-                    break;
-            }
             
-            discountAmount += baseAmount * discountVariable;
-            /*
-            if (customer.Segment == "Silver")
-            {
-                discountAmount += baseAmount * 0.05m;
-                notes += "silver discount; ";
-            }
-            else if (customer.Segment == "Gold")
-            {
-                discountAmount += baseAmount * 0.10m;
-                notes += "gold discount; ";
-            }
-            else if (customer.Segment == "Platinum")
-            {
-                discountAmount += baseAmount * 0.15m;
-                notes += "platinum discount; ";
-            }
-            else if (customer.Segment == "Education" && plan.IsEducationEligible)
-            {
-                discountAmount += baseAmount * 0.20m;
-                notes += "education discount; ";
-            }*/
+            
+            //discount calc
+            DiscountProcessor discountProcessor = new DiscountProcessor(customer,plan,baseAmount,seatCount,useLoyaltyPoints);
+            decimal subtotalAfterDiscount = discountProcessor.processDiscount();
 
-            if (customer.YearsWithCompany >= 5)
-            {
-                discountAmount += baseAmount * 0.07m;
-                notes += "long-term loyalty discount; ";
-            }
-            else if (customer.YearsWithCompany >= 2)
-            {
-                discountAmount += baseAmount * 0.03m;
-                notes += "basic loyalty discount; ";
-            }
-
-            if (seatCount >= 50)
-            {
-                discountAmount += baseAmount * 0.12m;
-                notes += "large team discount; ";
-            }
-            else if (seatCount >= 20)
-            {
-                discountAmount += baseAmount * 0.08m;
-                notes += "medium team discount; ";
-            }
-            else if (seatCount >= 10)
-            {
-                discountAmount += baseAmount * 0.04m;
-                notes += "small team discount; ";
-            }
-
-            if (useLoyaltyPoints && customer.LoyaltyPoints > 0)
-            {
-                int pointsToUse = customer.LoyaltyPoints > 200 ? 200 : customer.LoyaltyPoints;
-                discountAmount += pointsToUse;
-                notes += $"loyalty points used: {pointsToUse}; ";
-            }
-
-            decimal subtotalAfterDiscount = baseAmount - discountAmount;
-            if (subtotalAfterDiscount < 300m)
-            {
-                subtotalAfterDiscount = 300m;
-                notes += "minimum discounted subtotal applied; ";
-            }
-
+            string notes = discountProcessor.notes;
+            
             decimal supportFee = 0m;
             if (includePremiumSupport)
             {
@@ -176,7 +93,7 @@ namespace LegacyRenewalApp
                 case "INVOICE":
                     notes += "invoice payment; ";
                     break;
-                default:
+                default: //sprawdzenie
                     throw new ArgumentException("Unsupported payment method");
             }
             paymentFee = (subtotalAfterDiscount + supportFee) * paymentVariable;
@@ -241,7 +158,7 @@ namespace LegacyRenewalApp
                 PaymentMethod = normalizedPaymentMethod,
                 SeatCount = seatCount,
                 BaseAmount = StandardRounder.round(baseAmount),
-                DiscountAmount = StandardRounder.round(discountAmount),
+                DiscountAmount = StandardRounder.round(discountProcessor.discountAmount),
                 SupportFee = StandardRounder.round(supportFee),
                 PaymentFee = StandardRounder.round(paymentFee),
                 TaxAmount = StandardRounder.round(taxAmount),
