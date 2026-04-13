@@ -24,8 +24,8 @@ namespace LegacyRenewalApp
         {
             validateData(customerId, seatCount, planCode, paymentMethod);
             
-            string normalizedPlanCode = Normalizer.normalize(planCode); 
-            string normalizedPaymentMethod = Normalizer.normalize(paymentMethod);
+            string normalizedPlanCode = StandardNormalizer.normalize(planCode); 
+            string normalizedPaymentMethod = StandardNormalizer.normalize(paymentMethod);
 
             //wcześniej te dwie metody nie były statyczne mimo, że operowały na statycznych danych
             var customer = CustomerRepository.GetById(customerId);
@@ -125,7 +125,7 @@ namespace LegacyRenewalApp
                 throw new InvalidOperationException("Inactive customers cannot renew subscriptions");
             }
             
-            if (!ITax.payTypeFeeDict.ContainsKey(Normalizer.normalize(paymentMethod)))
+            if (!ITax.payTypeFeeDict.ContainsKey(StandardNormalizer.normalize(paymentMethod)))
             {
                 throw new ArgumentException("Unsupported payment method");
             }

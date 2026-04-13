@@ -1,6 +1,6 @@
 ﻿namespace LegacyRenewalApp;
-//TO DO: niech to będzie standard normalizer który implementuje interfejs INormalize
-public class Normalizer
+
+public class StandardNormalizer : INormalize
 {
     public static string normalize(string word)
     {

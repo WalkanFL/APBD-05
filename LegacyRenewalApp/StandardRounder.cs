@@ -1,8 +1,8 @@
 ﻿using System;
 
 namespace LegacyRenewalApp;
-//TO DO: niech to implementuje interface rounder ig
-public class StandardRounder
+
+public class StandardRounder : IRounder
 {
     public static decimal round(decimal num)
     {// ustandaryzowanie zaokrąglania
