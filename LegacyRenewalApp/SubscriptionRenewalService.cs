@@ -82,7 +82,8 @@ namespace LegacyRenewalApp
                 GeneratedAt = DateTime.UtcNow
             };
 
-            LegacyBillingGateway.SaveInvoice(invoice);
+            IInvoiceSaver invoiceSaver = new BillingInvoiceSaverAdapter();
+            invoiceSaver.SaveInvoice(invoice);
 
             if (!string.IsNullOrWhiteSpace(customer.Email))
             {
@@ -91,7 +92,8 @@ namespace LegacyRenewalApp
                     $"Hello {customer.FullName}, your renewal for plan {normalizedPlanCode} " +
                     $"has been prepared. Final amount: {invoice.FinalAmount:F2}.";
 
-                LegacyBillingGateway.SendEmail(customer.Email, subject, body);
+                IEmailer emailer = new BillingEmailAdapter();
+                emailer.SendEmail(customer.Email, subject, body);
             }
 
             return invoice;
